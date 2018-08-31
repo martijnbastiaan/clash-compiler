@@ -1,0 +1,10 @@
+clash for Debian
+---------------
+
+Clash is a functional hardware description language that borrows both its 
+syntax and semantics from the functional programming language Haskell. The 
+Clash compiler transforms these high-level descriptions to low-level 
+synthesizable VHDL, Verilog, or SystemVerilog.
+
+ -- Martijn Bastiaan <martijn@qbaylogic.com>  Mon, 03 Sep 2018 08:12:40 +0200
+

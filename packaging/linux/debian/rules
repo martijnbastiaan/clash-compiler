@@ -1,0 +1,70 @@
+#!/usr/bin/make -f
+# Before building a Debian package, make sure the debian package 'clash' is
+# NOT installed. Put the following in /etc/pbuilderrc:
+# 
+# ALLOWUNTRUSTED=yes
+# BUILDUSERNAME=root
+# BINDMOUNTS=/opt/clash
+# USENETWORK=yes
+# 
+# The build script will modify /opt/clash.
+
+# Installation flags
+export CLASH_VERSION=__BASE_VERSION__
+export CLASH_HOME=/opt/clash/$(CLASH_VERSION)
+
+# Compilers to use
+export GHC=/opt/ghc/8.4.3/bin/ghc
+export CABAL=/opt/cabal/2.4/bin/cabal
+
+# Homes:
+export HOME=$(CLASH_HOME)
+export BINDIR=$(CLASH_HOME)/bin
+
+build:
+	sudo mkdir -p $(CLASH_HOME) 
+
+	bash -c 'sudo chown -R `whoami`:`whoami` -R '"$(HOME)"
+
+	# Clean old build directory, copy current source to it
+	rm -rf $(CLASH_HOME)/src
+	cp -ap . $(CLASH_HOME)/src
+
+	# Compile source using cabal
+	cd $(CLASH_HOME)/src && $(CABAL) new-update
+	cd $(CLASH_HOME)/src && $(CABAL) new-build --dependencies-only --with-compiler=$(GHC) clash-ghc
+	cd $(CLASH_HOME)/src && $(CABAL) new-build                     --with-compiler=$(GHC) clash-ghc
+
+	# HACK: Can't access architecture conveniently
+	cd $(CLASH_HOME)/src && cp .ghc.environment* .ghc.environment
+
+	# Create Clash binary
+	mkdir -p $(BINDIR)
+	echo "#!/bin/bash" > $(BINDIR)/clash
+	echo "$(HOME)/src/dist-newstyle/build/*-linux/ghc-*/clash-ghc-*/x/clash/build/clash/clash -package-env $(HOME)/src/.ghc.environment \$@" >> $(BINDIR)/clash
+	chmod +x $(BINDIR)/clash
+
+	echo "#!/bin/bash" > $(BINDIR)/clashi
+	echo "$(HOME)/src/dist-newstyle/build/*-linux/ghc-*/clash-ghc-*/x/clashi/build/clashi/clashi -package-env $(HOME)/src/.ghc.environment \$@" >> $(BINDIR)/clashi
+	chmod +x $(BINDIR)/clashi
+
+	# Move to directory where dh_install can pick it up
+	rm -rf build
+	mkdir -p build/opt/clash
+	cp -ap $(CLASH_HOME) build/opt/clash
+
+override_dh_make:
+	dh_make --native
+
+override_dh_shlibdeps:
+	dh_shlibdeps --dpkg-shlibdeps-params=--ignore-missing-info
+
+%:
+	dh $@ 
+
+
+# dh_make generated override targets
+# This is example for Cmake (See https://bugs.debian.org/641051 )
+#override_dh_auto_configure:
+#	dh_auto_configure -- #	-DCMAKE_LIBRARY_PATH=$(DEB_HOST_MULTIARCH)
+

@@ -1,0 +1,16 @@
+Source: clash
+Section: embedded
+Priority: optional
+Maintainer: Martijn Bastiaan <martijn@qbaylogic.com>
+Build-Depends:  debhelper (>=9), cabal-install-2.4, ghc-8.4.3, git (>=2.7.4), libtinfo5 (>=6.0), libtinfo-dev (>=6.0), libgcc1 (>=6.0), libnuma1 (>=2.0), libnuma-dev (>=2.0), libgmp10 (>=6.1), g++-multilib (>=5.3), libc6-dev (>=2.23), sed (>= 4.2), wget (>= 1.17), sudo (>=1.8), iputils-ping
+Standards-Version: 3.9.7
+Homepage: http://www.clash-lang.org/
+Vcs-Git: https://github.com/clash-lang/clash-compiler.git
+Vcs-Browser: https://github.com/clash-lang/clash-compiler
+
+Package: clash-__BASE_VERSION__
+Architecture: amd64
+Depends: ${shlibs:Depends}, ${misc:Depends}, ghc-8.4.3
+Description: Clash: Haskell to HDL
+ Clash is a functional hardware description language that borrows both its syntax and semantics from the functional programming language Haskell. The Clash compiler transforms these high-level descriptions to low-level synthesizable VHDL, Verilog, or SystemVerilog.
+

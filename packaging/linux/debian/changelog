@@ -1,0 +1,6 @@
+clash (__BASE_VERSION__.__SUB_VERSION__) __DISTRO__; urgency=medium
+
+  * Autobuild. See Clash homepage for changelog.
+
+ -- __PGP_NAME__  __DATE__
+ 
