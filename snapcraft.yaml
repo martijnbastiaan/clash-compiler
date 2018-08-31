@@ -1,0 +1,191 @@
+# README: To update Clash to a newer version, change the "version" field. Source code will
+# README: be pulled from Hackage. To upgrade to a newer GHC, replace all occurrences of 
+# README: '8.4.3' with some newer version.
+#
+# To build a snap package locally run the following commands in the directory containing snapcraft.yaml. 
+# 
+# If you've never used lxd before:
+# 
+#  $ sudo snap install lxd
+#  $ sudo usermod -a -G lxd $USER
+#  $ newgrp lxd
+#  $ sudo lxd init
+#  
+# Then, to build the pacakge:
+#  
+#  $ snapcraft cleanbuild --debug
+#  
+# `lxd` ensures the snap is built using the exact (*knock on wood*) environment as is used on snapcraft.io.
+# 
+# Instructions tested on Ubuntu Server 18.04 / Ubuntu Desktop 16.04.
+#
+name: clash-test
+version: '0.99.3'
+summary: Clash; A Haskell to HDL compiler
+architectures: [amd64]
+description: |
+  Clash is a functional hardware description language that borrows both its
+  syntax and semantics from the functional programming language Haskell. 
+  The Clash compiler transforms these high-level descriptions to low-level 
+  synthesizable VHDL, Verilog, or SystemVerilog.  
+
+grade: stable # must be 'stable' to release into candidate/stable channels
+confinement: strict # use 'strict' once you have the right plugs and slots
+
+apps:
+  clash:
+    command: bin/clash
+    plugs:
+        - home
+  clashi:
+    command: bin/clashi
+    plugs:
+        - home
+  clash-ghc:
+    command: bin/ghc-8.4.3
+    plugs:
+        - home
+  clash-ghci:
+    command: bin/ghci-8.4.3
+    plugs:
+        - home
+  clash-pkg:
+    command: bin/ghc-pkg-8.4.3
+    plugs:
+        - home
+
+parts:
+  ghc:
+    source: "https://downloads.haskell.org/~ghc/8.4.3/ghc-8.4.3-x86_64-deb9-linux.tar.xz"
+    source-checksum: sha256/2e4f53afb872ad9c640f31aea283b3ff4c5028b65808a1920739900aef7d15c9
+    plugin: nil
+    override-build: |
+        if [ "$SNAPCRAFT_ARCH_TRIPLET" = "x86_64-linux-gnu" ]; then
+            ARCH=x86_64
+        else
+            (>&2 echo "Unsupported platform: $SNAPCRAFT_ARCH_TRIPLET. ARM could be supported if the GHC PPA would. i386 could be supported if we get Snap to download a different 'source' pacakge for GHC in the ghc part of this snap.")
+            exit 1
+        fi
+        
+        clash=$SNAPCRAFT_PROJECT_NAME
+
+        sudo mkdir -p /snap/$clash/current/opt/ghc
+        sudo chown -R $USER:$USER /snap/$clash
+        ./configure --prefix=/snap/$clash/current/opt/ghc
+        make install
+        mkdir -p $SNAPCRAFT_PART_INSTALL/opt
+        rm -rf $SNAPCRAFT_PART_INSTALL/opt/ghc
+        mv /snap/$clash/current/opt/ghc $SNAPCRAFT_PART_INSTALL/opt/ghc
+    build-packages:
+        - python3
+        - build-essential
+    stage-packages:
+        - libtinfo-dev
+        - libtinfo5
+  clash:
+    source: .
+    plugin: nil
+    after: [ghc]
+    override-build: |
+        if [ "$SNAPCRAFT_ARCH_TRIPLET" = "x86_64-linux-gnu" ]; then
+            ARCH=x86_64
+        else
+            (>&2 echo "Unsupported platform: $SNAPCRAFT_ARCH_TRIPLET. ARM could be supported if the GHC PPA would. i386 could be supported if we get Snap to download a different 'source' pacakge for GHC in the ghc part of this snap.")
+            exit 1
+        fi
+
+        # Get submodules
+        git submodule update --init --recursive
+
+        # Install iverilog
+        cd /tmp
+        wget https://mirror.one.com/ubuntu/pool/main/r/readline/libreadline7_7.0-0ubuntu2_amd64.deb
+        wget -q https://mirror.one.com/ubuntu/pool/universe/i/iverilog/iverilog_10.1-0.1build1_amd64.deb
+        sudo dpkg -i libreadline7_7.0-0ubuntu2_amd64.deb iverilog_10.1-0.1build1_amd64.deb
+        cd -
+        
+        # For debugging purposes it's nice for this snap to be able to have an arbitrary name
+        clash=$SNAPCRAFT_PROJECT_NAME
+
+        # Install GHC and Cabal from PPA
+        sudo add-apt-repository ppa:hvr/ghc -yu
+        sudo apt install ghc-8.4.3 cabal-install-2.4 -y
+
+        # Compile in /snap
+        sudo mkdir -p /snap/$clash/current/opt/clash/src
+        sudo chown -R $USER:$USER /snap/$clash/
+        sudo mount -o bind . /snap/$clash/current/opt/clash/src
+        cd /snap/$clash/current/opt/clash/src
+
+        # Get cache, don't care if it fails
+        wget https://www.hmbastiaan.nl/martijn/downloads/cabal.zip || true
+        unzip cabal.zip || true
+        mv .cabal .. || true
+        rm cabal.zip || true
+
+        # Compile Clash and dependencies
+        HOME=$(realpath ..) /opt/ghc/bin/cabal --http-transport=wget new-update
+        HOME=$(realpath ..) /opt/ghc/bin/cabal --http-transport=wget new-build --dependencies-only --enable-relocatable --with-compiler=/opt/ghc/bin/ghc all
+        HOME=$(realpath ..) /opt/ghc/bin/cabal --http-transport=wget new-build                     --enable-relocatable --with-compiler=/opt/ghc/bin/ghc all
+        
+        # Move to opt
+        cd ..
+        sudo umount /snap/$clash/current/opt/clash/src
+        mkdir -p $SNAPCRAFT_PART_INSTALL/opt/clash
+        rm -rf $SNAPCRAFT_PART_INSTALL/opt/clash/.cabal
+        mv .cabal $SNAPCRAFT_PART_INSTALL/opt/clash/.cabal
+        
+        mv $SNAPCRAFT_PART_BUILD $SNAPCRAFT_PART_INSTALL/opt/clash/src
+        mkdir -p $SNAPCRAFT_PART_BUILD
+        
+        # Create binaries
+        BINDIR=$SNAPCRAFT_PART_INSTALL/bin
+        mkdir -p $BINDIR
+        
+        # Create GHC 8.4.3 links needed for Clash (TODO: patch Clash so it justs tests 'ghc')
+        echo '#!/bin/bash'                                    >> $BINDIR/ghc-8.4.3
+        echo "exec /snap/$clash/current/opt/ghc/bin/ghc \$@"  >> $BINDIR/ghc-8.4.3
+        chmod +x $BINDIR/ghc-8.4.3
+        
+        echo '#!/bin/bash'                                    >> $BINDIR/ghci-8.4.3
+        echo "exec /snap/$clash/current/opt/ghc/bin/ghci \$@" >> $BINDIR/ghci-8.4.3
+        chmod +x $BINDIR/ghci-8.4.3
+
+        echo '#!/bin/bash'                                       >> $BINDIR/ghc-pkg-8.4.3
+        echo "exec /snap/$clash/current/opt/ghc/bin/ghc-pkg \$@" >> $BINDIR/ghc-pkg-8.4.3
+        chmod +x $BINDIR/ghc-pkg-8.4.3
+        
+        # Create Clash binary
+        echo "#!/bin/bash" >> $BINDIR/clash
+        echo "/snap/$clash/current/opt/clash/src/dist-newstyle/build/$ARCH-linux/ghc-8.4.3/clash-ghc-*/x/clash/build/clash/clash -package-env /snap/$clash/current/opt/clash/src/.ghc.environment.$ARCH-linux-8.4.3 \$@" >> $BINDIR/clash
+        chmod +x $BINDIR/clash
+        
+        echo "#!/bin/bash" >> $BINDIR/clashi
+        echo "/snap/$clash/current/opt/clash/src/dist-newstyle/build/$ARCH-linux/ghc-8.4.3/clash-ghc-*/x/clashi/build/clashi/clashi -package-env /snap/$clash/current/opt/clash/src/.ghc.environment.$ARCH-linux-8.4.3 \$@" >> $BINDIR/clashi
+        chmod +x $BINDIR/clashi
+    prime: 
+        - -home/*
+    build-packages:
+        - dpkg
+        - git
+        - iputils-ping
+        - wget
+        - libtinfo5
+        - libtinfo-dev
+        - libgcc1 
+        - libnuma1
+        - libnuma-dev
+        - libgmp10-dev
+        - build-essential
+        - software-properties-common
+        - unzip
+    stage-packages:
+        - libgcc1 
+        - libnuma1
+        - gcc
+        - libgmp10
+        - libgmp-dev
+        - libc6-dev 
+        - libc6
+        - libtinfo-dev
+        - libtinfo5
