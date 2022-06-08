@@ -7,6 +7,7 @@
 -}
 
 {-# LANGUAGE CPP #-}
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeFamilies #-}
 
@@ -72,10 +73,11 @@ parseClashFlagsOrErr flagsAvialable args = do
 
 flagsClash :: IORef ClashOpts -> [Flag IO]
 flagsClash ref = concat
-  [ getFlags @"render-enums" Proxy ref
-  , getFlags @"edalize" Proxy ref
+  [ getFlags @"edalize" Proxy ref
+  , getFlags @"render-enums" Proxy ref
   ]
 
+<<<<<<< HEAD
 <<<<<<< HEAD
 -- | Print deprecated flag warning
 deprecated
@@ -216,24 +218,32 @@ renderNoArg :: String -> Bool -> [String]
 renderNoArg flagNm value
   | value = ["-fclash-" <> flagNm]
   | otherwise = ["-fclash-no-" <> flagNm]
+=======
 
-class KnownSymbol flag => ClashFlag flag where
-  getFlags :: Proxy flag -> IORef ClashOpts -> [Flag IO]
-  renderFlag :: Proxy flag -> ClashOpts -> [String]
+>>>>>>> b5103f64 (f)
 
-flagName :: ClashFlag a => Proxy a -> String
-flagName = ssymbolToString . ssymbolProxy
 
+-- class KnownSymbol flag => ClashFlag flag where
+--   getFlags :: Proxy flag -> IORef ClashOpts -> [Flag IO]
+--   renderFlag :: Proxy flag -> ClashOpts -> [String]
+
+<<<<<<< HEAD
 -- | See 'opt_renderEnums'
 instance ClashFlag "render-enums" where
   getFlags p r =
     noArg p r (\v opts -> opts{opt_renderEnums = v})
 >>>>>>> 24fdf1ba (f)
+=======
+-- flagName :: ClashFlag a => Proxy a -> String
+-- flagName = ssymbolToString . ssymbolProxy
+>>>>>>> b5103f64 (f)
 
-  renderFlag p opts
-    | opt_renderEnums opts == opt_renderEnums defClashOpts = []
-    | otherwise = renderNoArg (flagName p) (opt_renderEnums opts)
+-- -- | See 'opt_renderEnums'
+-- instance ClashFlag "render-enums" where
+--   getFlags p r =
+--     noArg p r (\v opts -> opts{opt_renderEnums = v})
 
+<<<<<<< HEAD
 <<<<<<< HEAD
     Nothing ->
       addWarn (s ++ " is an invalid debug info")
@@ -251,24 +261,88 @@ setNoIDirCheck r = modifyIORef r (\c -> c {_opt_checkIDir = False})
 instance ClashFlag "edalize" where
   getFlags p r =
     noArg p r (\v opts -> opts{opt_edalize = v})
+=======
+--   renderFlag p opts
+--     | opt_renderEnums opts == opt_renderEnums defClashOpts = []
+--     | otherwise = renderNoArg p (opt_renderEnums opts)
 
-  renderFlag p opts
-    | opt_edalize opts == opt_renderEnums defClashOpts = []
-    | otherwise = renderNoArg (flagName p) (opt_edalize opts)
+-- -- | See 'opt_edalize'
+-- instance ClashFlag "edalize" where
+--   getFlags p r =
+--     noArg p r (\v opts -> opts{opt_edalize = v})
+
+--   renderFlag p opts
+--     | opt_edalize opts == opt_renderEnums defClashOpts = []
+--     | otherwise = renderNoArg p (opt_edalize opts)
+
+-- -- | See 'opt_evaluatorFuelLimit'
+-- instance ClashFlag "evaluator-fuel-limit" where
+--   getFlags p r =
+--     wordSuffixId p r (\v opts -> opts{opt_evaluatorFuelLimit = v})
+
+--   renderFlag p opts
+--     | opt_evaluatorFuelLimit opts == opt_evaluatorFuelLimit defClashOpts = []
+--     | otherwise = renderSuffix p (show (opt_evaluatorFuelLimit opts))
+
+-- -- | See 'opt_inlineLimit'
+-- instance ClashFlag "inline-limit" where
+--   getFlags p r =
+--     intSuffixId p r (\v opts -> opts{opt_inlineLimit = v})
+
+--   renderFlag p opts
+--     | opt_inlineLimit opts == opt_inlineLimit defClashOpts = []
+--     | otherwise = renderSuffix p (show (opt_inlineLimit opts))
+
+-- -- | See 'opt_forceUndefined'
+-- instance ClashFlag "force-undefined" where
+--   getFlags p r = strSuffix p r validateFlag setFlag
+--    where
+--     validateFlag :: String -> EwM IO (Maybe (Maybe (Maybe Int)))
+--     validateFlag = \case
+--       "0" -> pure (Just (Just (Just 0)))
+--       "1" -> pure (Just (Just (Just 1)))
+--       "c" -> pure (Just (Just Nothing))
+--       s   -> do
+--         addErr ("Unexpected argument: " <> s <> ". Options: 0, 1, c.")
+--         pure Nothing
+
+--     setFlag :: Maybe (Maybe Int) -> ClashOpts -> ClashOpts
+--     setFlag v opts = opts{opt_forceUndefined = v}
+
+--   renderFlag p opts =
+--     case opt_forceUndefined opts of
+--       -- TODO: This relies on a default value of /Nothing/
+--       Nothing -> []
+--       Just Nothing -> renderSuffix p "c"
+--       Just (Just v) -> renderSuffix p (show v)
+>>>>>>> b5103f64 (f)
+
 
 -- -- | See 'opt_aggressiveXOptBB'
 -- instance ClashFlag "aggressive-x-optimization-blackboxes" where
+<<<<<<< HEAD
 --   getFlags p = getBoolFlags p (\opts v -> pure opts{opt_aggressiveXOptBB = v})
 --   renderFlag p opts = maybeRenderBoolFlag p (opt_aggressiveXOptBB opts)
 >>>>>>> 24fdf1ba (f)
+=======
+--   getFlags p r =
+--     noArg p r (\v opts -> opts{opt_aggressiveXOptBB = v})
+
+--   renderFlag p opts
+--     | opt_aggressiveXOptBB opts == opt_aggressiveXOptBB defClashOpts = []
+--     | otherwise = renderNoArg p (opt_aggressiveXOptBB opts)
+>>>>>>> b5103f64 (f)
 
 -- -- | See 'opt_aggressiveXOpt'
 -- instance ClashFlag "aggressive-x-optimization" where
---   getFlags p = getBoolFlags p (\opts v -> pure opts{
+--   -- XXX: This flag overrides aggressiveXOpt. This relies on the default value
+--   --      being false.
+--   getFlags p r = noArg p r (\v opts -> opts{
 --       opt_aggressiveXOpt = v
 --     , opt_aggressiveXOptBB = v
 --   })
 
+<<<<<<< HEAD
 <<<<<<< HEAD
 setClear :: IORef ClashOpts -> IO ()
 setClear r = modifyIORef r (\c -> c {_opt_clear = True})
@@ -305,31 +379,49 @@ setErrorExtra :: IORef ClashOpts -> IO ()
 setErrorExtra r = modifyIORef r (\c -> c {_opt_errorExtra = True})
 =======
 --   renderFlag p opts = maybeRenderBoolFlag p (opt_aggressiveXOpt opts)
+=======
+--   renderFlag p opts
+--     | opt_aggressiveXOpt opts == opt_aggressiveXOpt defClashOpts = []
+--     | opt_aggressiveXOpt opts && not (opt_aggressiveXOptBB opts) =
+--       -- 'opt_aggressiveXOpt' overrides 'opt_aggressiveXOptBB'. If we see that
+--       -- the latter is set to False (with the former being True), we need to
+--       -- add another flag explicitly disabling the former.
+--          renderNoArg p (opt_aggressiveXOpt opts)
+--       ++ renderNoArg @"aggressive-x-optimization-blackboxes" Proxy False
+--     | otherwise = renderNoArg p (opt_aggressiveXOpt opts)
+>>>>>>> b5103f64 (f)
 
 -- -- | See 'opt_checkIDir'
 -- instance ClashFlag "check-inaccessible-idirs" where
---   type ClashFlagValue "check-inaccessible-idirs" = Bool
+--   getFlags p r =
+--     noArg p r (\v opts -> opts{opt_checkIDir = v})
 
---   flagDefault _ = True
---   getFlags p = getBoolFlags p (\opts v -> pure opts{opt_checkIDir = v})
---   renderFlag p opts = maybeRenderBoolFlag p (opt_checkIDir opts)
+--   renderFlag p opts
+--     | opt_checkIDir opts == opt_checkIDir defClashOpts = []
+--     | otherwise = renderNoArg p (opt_checkIDir opts)
 
 -- -- | See 'opt_ultra'
 -- instance ClashFlag "compile-ultra" where
---   type ClashFlagValue "compile-ultra" = Bool
+--   getFlags p r =
+--     noArg p r (\v opts -> opts{opt_ultra = v})
 
---   flagDefault _ = False
---   getFlags p = getBoolFlags p (\opts v -> pure opts{opt_ultra = v})
---   renderFlag p opts = maybeRenderBoolFlag p (opt_ultra opts)
+--   renderFlag p opts
+--     | opt_ultra opts == opt_ultra defClashOpts = []
+--     | otherwise = renderNoArg p (opt_ultra opts)
 
 -- -- | See 'opt_escapedIds'
 -- instance ClashFlag "escaped-identifiers" where
+<<<<<<< HEAD
 --   type ClashFlagValue "escaped-identifiers" = Bool
 >>>>>>> 24fdf1ba (f)
+=======
+--   getFlags p r =
+--     noArg p r (\v opts -> opts{opt_escapedIds = v})
+>>>>>>> b5103f64 (f)
 
---   flagDefault _ = True
---   getFlags p = getBoolFlags p (\opts v -> pure opts{opt_escapedIds = v})
---   renderFlag p opts = maybeRenderBoolFlag p (opt_escapedIds opts)
+--   renderFlag p opts
+--     | opt_ultra opts == opt_escapedIds defClashOpts = []
+--     | otherwise = renderNoArg p (opt_escapedIds opts)
 
 <<<<<<< HEAD
 setComponentPrefix
@@ -482,14 +574,6 @@ setNoRenderEnums r = modifyIORef r (\c -> c { _opt_renderEnums = False })
 --   getFlags p = getBoolFlags p (\opts _ -> pure opts)
 --   renderFlag _ _ = pure []
 
--- -- | See 'opt_inlineLimit'
--- instance ClashFlag "inline-limit" where
---   type ClashFlagValue "inline-limit" = Int
-
---   flagDefault _ = 20
---   getFlags p = getIntFlags p $ \opts v -> pure opts{opt_inlineLimit = v}
---   renderFlag p opts = maybeRenderArgFlag p (opt_inlineLimit opts)
-
 -- -- | See 'opt_specLimit'
 -- instance ClashFlag "spec-limit" where
 --   type ClashFlagValue "spec-limit" = Int
@@ -514,13 +598,6 @@ setNoRenderEnums r = modifyIORef r (\c -> c { _opt_renderEnums = False })
 --   getFlags p = getWordFlags p $ \opts v -> pure opts{opt_inlineConstantLimit = v}
 --   renderFlag p opts = maybeRenderArgFlag p (opt_inlineConstantLimit opts)
 
--- -- | See 'opt_evaluatorFuelLimit'
--- instance ClashFlag "evaluator-fuel-limit" where
---   type ClashFlagValue "evaluator-fuel-limit" = Word
-
---   flagDefault _ = 20
---   getFlags p = getWordFlags p $ \opts v -> pure opts{opt_evaluatorFuelLimit = v}
---   renderFlag p opts = maybeRenderArgFlag p (opt_evaluatorFuelLimit opts)
 
 -- -- | See 'opt_inlineWFCacheLimit'
 -- instance ClashFlag "inline-workfree-limit" where
@@ -659,20 +736,6 @@ setNoRenderEnums r = modifyIORef r (\c -> c { _opt_renderEnums = False })
 
 --   renderFlag = renderGhcMaybeTextFlag
 
--- -- | See 'opt_forceUndefined'
--- instance ClashFlag "force-undefined" where
---   type ClashFlagValue "force-undefined" = Maybe Int
-
---   flagDefault _ = Nothing
-
---   getFlags p = do
---     intFlags <- getIntFlags p $ \opts v -> setFlag opts (Just (Just v))
---     unsetFlag <- getUnsetFlag p $ \opts _ -> setFlag opts Nothing
---     pure (unsetFlag : intFlags)
---    where
---     setFlag opts v = pure opts{opt_forceUndefined = v}
-
---   renderFlag = renderGhcMaybeStringFlag
 
 -- -- | See 'opt_hdlSyn'
 -- instance ClashFlag "hdlsyn" where
