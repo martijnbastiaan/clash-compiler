@@ -120,6 +120,13 @@ jobs:
     needs: announce
     if: needs.announce.outputs.trusted == 'true'
     runs-on: ${{ fromJSON(vars.BENCH_RUNS_ON || '["self-hosted","benchmark"]') }}
+    defaults:
+      run:
+        # The container image has no toolchain on the default PATH. This
+        # wrapper runs each step in the bittide-hardware nix dev shell
+        # that is pre-built into the image at /build. It provides GHC,
+        # cabal, python3, sbt and verilator.
+        shell: git-nix-shell {0} /build
     container:
       image: ghcr.io/clash-lang/nixos-bittide-hardware:2026-05-11
       volumes:
