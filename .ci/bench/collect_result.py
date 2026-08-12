@@ -107,8 +107,10 @@ def main():
     'source': source,
     'machine': {
       # In a container job the hostname is an ephemeral container id.
-      # The workflows pass the runner name in BENCH_HOSTNAME instead.
-      'hostname': os.environ.get('BENCH_HOSTNAME') or socket.gethostname(),
+      # Prefer the runner name, which GitHub sets for every step.
+      'hostname': (os.environ.get('BENCH_HOSTNAME')
+                   or os.environ.get('RUNNER_NAME')
+                   or socket.gethostname()),
       'cpu': cpu_model(),
       'container': os.environ.get('BENCH_CONTAINER'),
     },

@@ -44,7 +44,6 @@ jobs:
       contents: write # push_result.sh pushes to the benchmark-results branch
     env:
       BENCH_QUICK: ${{ vars.BENCH_QUICK }}
-      BENCH_HOSTNAME: ${{ runner.name }}
       CABAL_DIR: /bench-cache/cabal
     steps:
       # Get the trusted scripts from the ref of this workflow. Keep them

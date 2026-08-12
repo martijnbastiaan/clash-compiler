@@ -1,0 +1,283 @@
+name: Benchmark PR
+
+# This workflow benchmarks PRs that have the "performance" label. It keeps
+# one live sticky comment on the PR (queued -> running -> report). See
+# .ci/bench/README.md for the full design and the security model.
+#
+# Security: pull_request_target gives a write token near untrusted code.
+# Trusted scripts always come from the base ref. The job that runs PR code
+# holds a pull-requests-write token only. Only GitHub-hosted jobs that never
+# run PR code hold contents: write.
+
+on:
+  pull_request_target:
+    types: [labeled, synchronize, reopened]
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: "PR number to benchmark"
+        required: true
+      sha:
+        description: "Approved head sha"
+        required: true
+
+# One expression must serve both event types. On workflow_dispatch the
+# github.event.pull_request context is empty, so "||" falls through to the
+# inputs. A dispatched run always gets a per-commit group: the dispatch
+# approves one exact commit, and it must not cancel or be cancelled.
+concurrency:
+  group: >-
+    bench-pr-${{ github.event.pull_request.number || inputs.pr_number }}${{
+      (github.event_name == 'workflow_dispatch'
+       || contains(github.event.pull_request.labels.*.name, 'benchmark-every-commit'))
+      && format('-{0}', github.event.pull_request.head.sha || inputs.sha) || '' }}
+  # Keep the event guard. Without it, a dispatch evaluates
+  # !contains(<empty>) to true and becomes cancellable.
+  cancel-in-progress: >-
+    ${{ github.event_name == 'pull_request_target'
+        && !contains(github.event.pull_request.labels.*.name, 'benchmark-every-commit') }}
+
+permissions: {}
+
+jobs:
+  announce:
+    name: Announce benchmark
+    runs-on: ubuntu-latest
+    # Gate: a dispatch always passes, because only maintainers can
+    # dispatch. A pull_request_target event needs the "performance" label.
+    # A "labeled" event must be for the "performance" label itself.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (contains(github.event.pull_request.labels.*.name, 'performance') &&
+       (github.event.action != 'labeled' || github.event.label.name == 'performance'))
+    permissions:
+      contents: read
+      pull-requests: write
+    outputs:
+      pr_number: ${{ steps.resolve.outputs.pr_number }}
+      head_sha: ${{ steps.resolve.outputs.head_sha }}
+      trusted: ${{ steps.resolve.outputs.trusted }}
+    steps:
+      # For pull_request_target this checks out the base branch head, for
+      # workflow_dispatch the dispatched ref. Never the PR head.
+      - name: Checkout trusted scripts
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      # Resolve pr_number, head_sha and trust once. All later jobs read
+      # these outputs and never read the event context.
+      - name: Resolve PR, sha and trust
+        id: resolve
+        env:
+          GH_TOKEN: ${{ github.token }}
+          IN_PR: ${{ inputs.pr_number }}
+          IN_SHA: ${{ inputs.sha }}
+          EV_PR: ${{ github.event.pull_request.number }}
+          EV_SHA: ${{ github.event.pull_request.head.sha }}
+          EV_ASSOC: ${{ github.event.pull_request.author_association }}
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            [[ "${IN_PR}" =~ ^[0-9]+$ ]] || { echo "bad pr_number" >&2; exit 1; }
+            [[ "${IN_SHA}" =~ ^[0-9a-fA-F]{7,40}$ ]] || { echo "bad sha" >&2; exit 1; }
+            pr="${IN_PR}"
+            # Normalize a short sha to a full sha. This also makes sure
+            # that the commit exists in this repository network.
+            sha=$(gh api "repos/${GITHUB_REPOSITORY}/commits/${IN_SHA}" --jq .sha)
+            # A dispatch is a maintainer approval of this exact sha.
+            trusted=true
+          else
+            pr="${EV_PR}"
+            sha="${EV_SHA}"
+            if [[ "${{ github.event.action }}" == "labeled" ]]; then
+              # Only users with triage access can add the label.
+              trusted=true
+            elif [[ "${EV_ASSOC}" =~ ^(OWNER|MEMBER|COLLABORATOR)$ ]]; then
+              # Same trust rule as .ci/kloonbot.sh.
+              trusted=true
+            else
+              trusted=false
+            fi
+          fi
+          { echo "pr_number=${pr}"
+            echo "head_sha=${sha}"
+            echo "trusted=${trusted}"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Set sticky comment
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          PR: ${{ steps.resolve.outputs.pr_number }}
+          SHA: ${{ steps.resolve.outputs.head_sha }}
+          TRUSTED: ${{ steps.resolve.outputs.trusted }}
+        run: |
+          if [[ "${TRUSTED}" == "true" ]]; then
+            ./.ci/bench/comment.py "${PR}" queued "${SHA}"
+          else
+            ./.ci/bench/comment.py "${PR}" awaiting-approval "${SHA}"
+          fi
+
+  bench:
+    name: Run benchmarks
+    needs: announce
+    if: needs.announce.outputs.trusted == 'true'
+    runs-on: ${{ fromJSON(vars.BENCH_RUNS_ON || '["self-hosted","benchmark"]') }}
+    defaults:
+      run:
+        # The container image has no toolchain on the default PATH. This
+        # wrapper runs each step in the bittide-hardware nix dev shell
+        # that is pre-built into the image at /build. It provides GHC,
+        # cabal, python3, sbt and verilator.
+        shell: git-nix-shell {0} /build
+    container:
+      image: ghcr.io/clash-lang/nixos-bittide-hardware:2026-05-11
+      volumes:
+        # Keep the cabal store and index on the runner between jobs.
+        - /var/cache/clash-bench:/bench-cache
+    permissions:
+      contents: read
+      pull-requests: write
+    env:
+      GITHUB_TOKEN: ${{ github.token }}
+      PR: ${{ needs.announce.outputs.pr_number }}
+      SHA: ${{ needs.announce.outputs.head_sha }}
+      BENCH_QUICK: ${{ vars.BENCH_QUICK }}
+      BENCH_CONTAINER: ghcr.io/clash-lang/nixos-bittide-hardware:2026-05-11
+      CABAL_DIR: /bench-cache/cabal
+    steps:
+      - name: Checkout trusted scripts
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          path: scripts
+
+      - name: Mark running
+        run: ./scripts/.ci/bench/comment.py "${PR}" running "${SHA}"
+
+      # The default ref of this checkout is trusted (base branch head for
+      # pull_request_target, dispatched ref for workflow_dispatch).
+      - name: Checkout clash-compiler
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          path: clash-compiler
+          fetch-depth: 0
+
+      - name: Fetch PR refs and compute merge base
+        id: prep
+        working-directory: clash-compiler
+        run: |
+          # The results branch does not exist on first contact.
+          git fetch origin \
+            benchmark-results:refs/remotes/origin/benchmark-results || true
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            git fetch origin "refs/pull/${PR}/head:refs/bench/pr-head"
+            git rev-parse --verify --quiet "${SHA}^{commit}" \
+              || git fetch origin "${SHA}"
+          else
+            git fetch origin "refs/pull/${PR}/merge:refs/bench/pr-merge" \
+                             "refs/pull/${PR}/head:refs/bench/pr-head"
+            # GitHub computes the merge ref lazily. Make sure it merges
+            # the sha that announce saw. If not, a newer run covers it.
+            [[ "$(git rev-parse refs/bench/pr-merge^2)" == "${SHA}" ]] \
+              || { echo "stale merge ref; a newer run covers the new head" >&2; exit 1; }
+          fi
+          echo "merge_base=$(git merge-base origin/master "${SHA}")" >> "$GITHUB_OUTPUT"
+
+      - name: Update package index
+        working-directory: clash-compiler
+        run: |
+          # Force https. With the default http URL, a cache on the
+          # network path can serve a stale package index.
+          mkdir -p "${CABAL_DIR}"
+          printf 'repository hackage.haskell.org\n  url: https://hackage.haskell.org/\n  secure: True\n' \
+            > "${CABAL_DIR}/config"
+          ../scripts/.ci/retry.sh cabal update
+
+      - name: Baseline lookup
+        run: |
+          mkdir -p out
+          ./scripts/.ci/bench/baseline.py \
+            clash-compiler refs/remotes/origin/benchmark-results \
+            "${{ steps.prep.outputs.merge_base }}" out/baseline.json
+
+      # Benchmark the merge base before any PR code enters the workspace.
+      # The merge base is an ancestor of origin/master and thus trusted.
+      # The report job pushes this result to the results branch.
+      - name: Backfill merge-base baseline if needed
+        working-directory: clash-compiler
+        run: |
+          backfill=$(python3 -c 'import json; print(json.load(open("../out/baseline.json"))["backfill_sha"] or "")')
+          if [[ -n "${backfill}" ]]; then
+            git checkout -f "${backfill}"
+            git clean -dfxq
+            ../scripts/.ci/bench/run_clash_benchmarks.sh ../out/baseline-norm.json
+            ../scripts/.ci/bench/collect_result.py \
+              pr-backfill ../out/baseline-norm.json stub ../out/baseline-result.json
+          fi
+
+      - name: Checkout code under test
+        working-directory: clash-compiler
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            git checkout -f "${SHA}"
+          else
+            git checkout -f refs/bench/pr-merge
+          fi
+          git clean -dfxq
+          git log -1 --format='benchmarking %H %s'
+
+      - name: Benchmark PR
+        working-directory: clash-compiler
+        run: |
+          ../scripts/.ci/bench/run_clash_benchmarks.sh ../out/norm.json
+          ../scripts/.ci/bench/collect_result.py \
+            pr ../out/norm.json stub ../out/pr-result.json
+
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: bench-output
+          path: out/
+          if-no-files-found: error
+
+  report:
+    name: Report results
+    needs: [announce, bench]
+    if: always() && needs.announce.result == 'success' && needs.bench.result != 'skipped'
+    runs-on: ubuntu-latest
+    permissions:
+      # Never run PR code in this job: it holds contents write for
+      # push_result.sh (the backfilled baseline).
+      contents: write
+      pull-requests: write
+    env:
+      GITHUB_TOKEN: ${{ github.token }}
+      PR: ${{ needs.announce.outputs.pr_number }}
+      SHA: ${{ needs.announce.outputs.head_sha }}
+    steps:
+      - name: Checkout trusted scripts
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Download results
+        if: needs.bench.result == 'success'
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: bench-output
+          path: out
+
+      - name: Publish report
+        if: needs.bench.result == 'success'
+        run: |
+          args=(out/pr-result.json out/baseline.json)
+          if [[ -f out/baseline-result.json ]]; then
+            args+=(out/baseline-result.json)
+          fi
+          ./.ci/bench/report.py "${args[@]}" > report.md
+          ./.ci/bench/comment.py "${PR}" done "${SHA}" report.md
+          if [[ -f out/baseline-result.json ]]; then
+            ./.ci/bench/push_result.sh out/baseline-result.json
+          fi
+
+      - name: Mark failed
+        if: needs.bench.result == 'failure' || needs.bench.result == 'cancelled'
+        run: |
+          ./.ci/bench/comment.py "${PR}" failed "${SHA}" \
+            "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
