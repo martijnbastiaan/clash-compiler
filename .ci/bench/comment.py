@@ -93,7 +93,11 @@ def parse_state(body):
 def extract_report(body):
   if REPORT_MARKER not in body:
     return None
-  return body.split(REPORT_MARKER, 1)[1].lstrip('\n')
+  report = body.split(REPORT_MARKER, 1)[1]
+  # Drop a rendered stale banner. render() adds the banner again when
+  # it applies. Without this step, every render stacks one more banner.
+  lines = [l for l in report.split('\n') if not l.startswith('> ⚠️ **Stale**')]
+  return '\n'.join(lines).strip('\n')
 
 
 def status_line(state):
