@@ -1,8 +1,9 @@
 name: Benchmark runner probe
 
-# Staging-only helper: reports the benchmark runner's capabilities (docker,
-# nix, CPU, memory, disk, frequency scaling) and verifies that container jobs
-# work by pulling the image the benchmark jobs will use.
+# This workflow is a staging helper. It reports the capabilities of the
+# benchmark runner: docker, nix, CPU, memory, disk, and frequency scaling.
+# It also pulls the benchmark container image. This makes sure that
+# container jobs operate on the runner.
 
 on: workflow_dispatch
 
