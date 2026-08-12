@@ -141,7 +141,6 @@ jobs:
       SHA: ${{ needs.announce.outputs.head_sha }}
       BENCH_QUICK: ${{ vars.BENCH_QUICK }}
       BENCH_CONTAINER: ghcr.io/clash-lang/nixos-bittide-hardware:2026-05-11
-      BENCH_HOSTNAME: ${{ runner.name }}
       CABAL_DIR: /bench-cache/cabal
     steps:
       - name: Checkout trusted scripts
