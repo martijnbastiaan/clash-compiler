@@ -33,7 +33,20 @@ jobs:
     needs: probe
     container:
       image: ghcr.io/clash-lang/nixos-bittide-hardware:2026-05-11
+      volumes:
+        - /var/cache/clash-bench:/bench-cache
+    env:
+      CABAL_DIR: /bench-cache/cabal
     steps:
+      - name: Debug cabal index state in dev shell
+        shell: git-nix-shell {0} /build
+        run: |
+          echo "== cabal version"; cabal --version
+          echo "== which cabal";   command -v cabal
+          echo "== env";           env | grep -iE "cabal|hackage" || true
+          echo "== config";        cat /bench-cache/cabal/config 2>/dev/null || echo "no config"
+          echo "== index files";   ls -la /bench-cache/cabal/packages/hackage.haskell.org/ 2>/dev/null | head || true
+          echo "== update";        cabal update 2>&1 | tail -3
       - name: Report container environment
         run: |
           echo "== os";     cat /etc/os-release 2>/dev/null || true

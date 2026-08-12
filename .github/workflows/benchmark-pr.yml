@@ -182,7 +182,13 @@ jobs:
 
       - name: Update package index
         working-directory: clash-compiler
-        run: ../scripts/.ci/retry.sh cabal update
+        run: |
+          # Force https. With the default http URL, a cache on the
+          # network path can serve a stale package index.
+          mkdir -p "${CABAL_DIR}"
+          printf 'repository hackage.haskell.org\n  url: https://hackage.haskell.org/\n  secure: True\n' \
+            > "${CABAL_DIR}/config"
+          ../scripts/.ci/retry.sh cabal update
 
       - name: Baseline lookup
         run: |
