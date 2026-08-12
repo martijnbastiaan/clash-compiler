@@ -72,8 +72,15 @@ jobs:
           git log -1 --format='benchmarking %H %s'
 
       - name: Update package index
-        run: ../scripts/.ci/retry.sh cabal update
         working-directory: clash-compiler
+        run: |
+          # Force https. With the default http URL, a cache on the
+          # network path can serve a stale package index.
+          mkdir -p "${CABAL_DIR}"
+          printf 'repository hackage.haskell.org\n  url: https://hackage.haskell.org/\n  secure: True\n' \
+            > "${CABAL_DIR}/config"
+          ../scripts/.ci/retry.sh cabal update
+          mkdir -p ../out
 
       - name: Run normalization benchmarks
         working-directory: clash-compiler
