@@ -1,0 +1,46 @@
+name: Benchmark runner probe
+
+# Staging-only helper: reports the benchmark runner's capabilities (docker,
+# nix, CPU, memory, disk, frequency scaling) and verifies that container jobs
+# work by pulling the image the benchmark jobs will use.
+
+on: workflow_dispatch
+
+permissions: {}
+
+jobs:
+  probe:
+    name: Probe bare runner
+    runs-on: ${{ fromJSON(vars.BENCH_RUNS_ON || '["self-hosted","benchmark"]') }}
+    steps:
+      - name: Report system information
+        run: |
+          echo "== hostname";  hostname
+          echo "== cpu";       grep -m1 "model name" /proc/cpuinfo || true; nproc
+          echo "== mem";       free -h
+          echo "== disk";      df -h . /tmp
+          echo "== docker";    (docker --version && docker info --format 'server {{.ServerVersion}}') || echo "no docker"
+          echo "== nix";       nix --version || echo "no nix"
+          echo "== governor";  cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor 2>/dev/null || echo "n/a"
+          echo "== turbo";     cat /sys/devices/system/cpu/intel_pstate/no_turbo 2>/dev/null || echo "n/a (no intel_pstate)"
+          echo "== user";      id
+          echo "== workdir";   pwd
+
+  probe_container:
+    name: Probe container job
+    runs-on: ${{ fromJSON(vars.BENCH_RUNS_ON || '["self-hosted","benchmark"]') }}
+    needs: probe
+    container:
+      image: ghcr.io/clash-lang/nixos-bittide-hardware:2026-05-11
+    steps:
+      - name: Report container environment
+        run: |
+          echo "== os";     cat /etc/os-release 2>/dev/null || true
+          echo "== ghc";    ghc --version || echo "no ghc on PATH"
+          echo "== cabal";  cabal --version || echo "no cabal on PATH"
+          echo "== python"; python3 --version || echo "no python3 on PATH"
+          echo "== git";    git --version || echo "no git on PATH"
+          echo "== curl";   curl --version | head -n1 || echo "no curl on PATH"
+          echo "== sbt";    which sbt || echo "no sbt on PATH"
+          echo "== verilator"; verilator --version || echo "no verilator on PATH"
+          echo "== requests"; python3 -c "import requests; print(requests.__version__)" || echo "no python requests"
