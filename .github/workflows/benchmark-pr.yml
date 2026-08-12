@@ -172,15 +172,25 @@ jobs:
             git fetch origin "+refs/pull/${PR}/head:refs/bench/pr-head"
             git rev-parse --verify --quiet "${SHA}^{commit}" \
               || git fetch origin "${SHA}"
+            ref=${SHA}
           else
             git fetch origin "+refs/pull/${PR}/merge:refs/bench/pr-merge" \
                              "+refs/pull/${PR}/head:refs/bench/pr-head"
-            # GitHub computes the merge ref lazily. Make sure it merges
-            # the sha that announce saw. If not, a newer run covers it.
-            [[ "$(git rev-parse refs/bench/pr-merge^2)" == "${SHA}" ]] \
-              || { echo "stale merge ref; a newer run covers the new head" >&2; exit 1; }
+            ref=refs/bench/pr-merge
+            # Each PR has one merge ref, and it follows the newest head.
+            # With benchmark-every-commit, or when GitHub has not yet
+            # updated the lazily computed merge ref, this run's head is
+            # older. Then benchmark the exact commit instead.
+            if [[ "$(git rev-parse "${ref}^2")" != "${SHA}" ]]; then
+              echo "merge ref does not match ${SHA}; benchmark the exact commit" >&2
+              git rev-parse --verify --quiet "${SHA}^{commit}" \
+                || git fetch origin "${SHA}"
+              ref=${SHA}
+            fi
           fi
-          echo "merge_base=$(git merge-base origin/master "${SHA}")" >> "$GITHUB_OUTPUT"
+          { echo "ref=${ref}"
+            echo "merge_base=$(git merge-base origin/master "${SHA}")"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Update package index
         working-directory: clash-compiler
@@ -217,11 +227,7 @@ jobs:
       - name: Checkout code under test
         working-directory: clash-compiler
         run: |
-          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
-            git checkout -f "${SHA}"
-          else
-            git checkout -f refs/bench/pr-merge
-          fi
+          git checkout -f "${{ steps.prep.outputs.ref }}"
           git clean -dfxq
           git log -1 --format='benchmarking %H %s'
 
