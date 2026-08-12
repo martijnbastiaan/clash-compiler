@@ -21,12 +21,13 @@ import json
 import os
 import re
 import sys
-
-import requests
+import urllib.error
+import urllib.request
 
 MARKER = '<!-- clash-benchmark-bot -->'
 REPORT_MARKER = '<!-- report -->'
 STATE_RE = re.compile(r'<!-- state: (\{.*?\}) -->')
+LINK_NEXT_RE = re.compile(r'<([^>]+)>; rel="next"')
 
 API = os.environ.get('GITHUB_API_URL', 'https://api.github.com')
 
@@ -44,27 +45,31 @@ def run_url():
   return f'{server}/{repo}/actions/runs/{run_id}'
 
 
-def session():
-  s = requests.Session()
-  s.headers.update({
+def api(method, url, body=None):
+  """One GitHub API request. Returns (parsed body, next-page url)."""
+  data = json.dumps(body).encode() if body is not None else None
+  req = urllib.request.Request(url, data=data, method=method, headers={
     'Authorization': f"Bearer {os.environ['GITHUB_TOKEN']}",
     'Accept': 'application/vnd.github+json',
+    'Content-Type': 'application/json',
   })
-  return s
+  try:
+    with urllib.request.urlopen(req) as resp:
+      match = LINK_NEXT_RE.search(resp.headers.get('Link') or '')
+      return json.load(resp), match.group(1) if match else None
+  except urllib.error.HTTPError as e:
+    sys.exit(f'comment.py: {method} {url} failed: {e.code} {e.read().decode()}')
 
 
-def find_comment(s, pr):
+def find_comment(pr):
   """Return the bot comment of the PR, or None."""
-  url = f"{API}/repos/{os.environ['GITHUB_REPOSITORY']}/issues/{pr}/comments"
-  params = {'per_page': 100}
+  repo = os.environ['GITHUB_REPOSITORY']
+  url = f'{API}/repos/{repo}/issues/{pr}/comments?per_page=100'
   while url:
-    r = s.get(url, params=params)
-    r.raise_for_status()
-    for comment in r.json():
+    comments, url = api('GET', url)
+    for comment in comments:
       if MARKER in comment['body']:
         return comment
-    url = r.links.get('next', {}).get('url')
-    params = None
   return None
 
 
@@ -166,8 +171,7 @@ def main():
   if cmd in ('done', 'failed') and extra is None:
     sys.exit(__doc__.strip())
 
-  s = session()
-  comment = find_comment(s, pr)
+  comment = find_comment(pr)
   old = parse_state(comment['body']) if comment else None
   report = extract_report(comment['body']) if comment else None
 
@@ -179,12 +183,10 @@ def main():
   body = render(new, report)
   repo = os.environ['GITHUB_REPOSITORY']
   if comment:
-    r = s.patch(f"{API}/repos/{repo}/issues/comments/{comment['id']}",
-                json={'body': body})
+    api('PATCH', f"{API}/repos/{repo}/issues/comments/{comment['id']}",
+        {'body': body})
   else:
-    r = s.post(f"{API}/repos/{repo}/issues/{pr}/comments",
-               json={'body': body})
-  r.raise_for_status()
+    api('POST', f'{API}/repos/{repo}/issues/{pr}/comments', {'body': body})
   print(f'comment.py: set {new["status"]} for {short(sha)}')
 
 
