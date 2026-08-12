@@ -106,7 +106,11 @@ def main():
               .isoformat(timespec='seconds'),
     'source': source,
     'machine': {
-      'hostname': socket.gethostname(),
+      # In a container job the hostname is an ephemeral container id.
+      # Prefer the runner name, which GitHub sets for every step.
+      'hostname': (os.environ.get('BENCH_HOSTNAME')
+                   or os.environ.get('RUNNER_NAME')
+                   or socket.gethostname()),
       'cpu': cpu_model(),
       'container': os.environ.get('BENCH_CONTAINER'),
     },
