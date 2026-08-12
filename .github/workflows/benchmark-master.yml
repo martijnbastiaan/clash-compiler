@@ -1,0 +1,89 @@
+name: Benchmark master
+
+# This workflow benchmarks each merge to master. It stores the result on
+# the orphan benchmark-results branch as results/<sha[0:2]>/<full-sha>.json.
+# The results are baselines for PR benchmarks (benchmark-pr.yml). Later they
+# also become data for isclashfastyet.com. See .ci/bench/README.md.
+
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+    inputs:
+      sha:
+        description: "Commit to benchmark (defaults to the head of the dispatched ref); used for backfills"
+        required: false
+
+concurrency:
+  group: bench-master
+  cancel-in-progress: false
+
+permissions: {}
+
+env:
+  BENCH_CONTAINER: ghcr.io/clash-lang/nixos-bittide-hardware:2026-05-11
+
+jobs:
+  bench:
+    name: Benchmark
+    runs-on: ${{ fromJSON(vars.BENCH_RUNS_ON || '["self-hosted","benchmark"]') }}
+    container:
+      image: ghcr.io/clash-lang/nixos-bittide-hardware:2026-05-11
+      volumes:
+        # Keep the cabal store and index on the runner between jobs.
+        # See .ci/bench/README.md.
+        - /var/cache/clash-bench:/bench-cache
+    permissions:
+      contents: write # push_result.sh pushes to the benchmark-results branch
+    env:
+      BENCH_QUICK: ${{ vars.BENCH_QUICK }}
+      CABAL_DIR: /bench-cache/cabal
+    steps:
+      # Get the trusted scripts from the ref of this workflow. Keep them
+      # separate from the commit under test. A backfilled commit can be
+      # older than .ci/bench.
+      - name: Checkout scripts
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          path: scripts
+
+      - name: Checkout clash-compiler
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          path: clash-compiler
+          fetch-depth: 0
+
+      - name: Check out commit under test
+        working-directory: clash-compiler
+        env:
+          IN_SHA: ${{ inputs.sha }}
+        run: |
+          if [[ -n "${IN_SHA}" ]]; then
+            sha=$(git rev-parse --verify "${IN_SHA}^{commit}")
+            git checkout -f "${sha}"
+          fi
+          git log -1 --format='benchmarking %H %s'
+
+      - name: Update package index
+        run: ../scripts/.ci/retry.sh cabal update
+        working-directory: clash-compiler
+
+      - name: Run normalization benchmarks
+        working-directory: clash-compiler
+        run: ../scripts/.ci/bench/run_clash_benchmarks.sh ../out/norm.json
+
+      - name: Collect result
+        working-directory: clash-compiler
+        run: ../scripts/.ci/bench/collect_result.py master ../out/norm.json stub ../out/result.json
+
+      - name: Upload artifacts
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: bench-output
+          path: out/
+          if-no-files-found: error
+
+      - name: Push result
+        working-directory: clash-compiler
+        run: ../scripts/.ci/bench/push_result.sh ../out/result.json
