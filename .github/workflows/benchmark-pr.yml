@@ -235,8 +235,9 @@ jobs:
         working-directory: clash-compiler
         run: |
           ../scripts/.ci/bench/run_clash_benchmarks.sh ../out/norm.json
+          ../scripts/.ci/bench/run_bittide.sh ../out/wiredemo.json
           ../scripts/.ci/bench/collect_result.py \
-            pr ../out/norm.json stub ../out/pr-result.json
+            pr ../out/norm.json ../out/wiredemo.json ../out/pr-result.json
 
       - name: Upload results
         if: always()

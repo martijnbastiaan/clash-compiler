@@ -100,9 +100,13 @@ jobs:
         working-directory: clash-compiler
         run: ../scripts/.ci/bench/run_clash_benchmarks.sh ../out/norm.json
 
+      - name: Run wireDemo benchmark
+        working-directory: clash-compiler
+        run: ../scripts/.ci/bench/run_bittide.sh ../out/wiredemo.json
+
       - name: Collect result
         working-directory: clash-compiler
-        run: ../scripts/.ci/bench/collect_result.py master ../out/norm.json stub ../out/result.json
+        run: ../scripts/.ci/bench/collect_result.py master ../out/norm.json ../out/wiredemo.json ../out/result.json
 
       - name: Upload artifacts
         if: always()
