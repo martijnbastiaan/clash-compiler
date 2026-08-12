@@ -2,6 +2,13 @@ name: Kloonbot
 
 on: issue_comment
 
+# The run_ci command pushes a branch to origin: it needs contents write.
+# The run_benchmark command dispatches benchmark-pr.yml: it needs actions
+# write.
+permissions:
+  contents: write
+  actions: write
+
 jobs:
   kloonbot:
     name: Clone branch to local branch
@@ -12,6 +19,8 @@ jobs:
       KBOT_AUTHOR_ASSOC: ${{ github.event.comment.author_association }}
       KBOT_COMMENT: ${{ github.event.comment.body }}
       KBOT_PULL_REQUEST_URL: ${{ github.event.issue.pull_request.url }}
+      KBOT_PR_NUMBER: ${{ github.event.issue.number }}
+      GH_TOKEN: ${{ github.token }}
 
     steps:
       - name: Checkout
