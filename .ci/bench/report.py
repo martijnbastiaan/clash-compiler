@@ -149,8 +149,23 @@ def main():
     else:
       lines.append(f'| `{name}` | no baseline | {fmt_cell(pr_row)} | — |')
 
-  lines += wire_demo_rows(baseline and baseline['wire_demo'],
-                          pr_result['wire_demo'])
+  # The wireDemo columns can use a separate, older baseline when the
+  # main baseline has no usable wire_demo leg (see baseline.py).
+  wd_base = baseline['wire_demo'] if baseline else None
+  wd_note = None
+  split = baseline_info.get('wire_demo_baseline')
+  if (split and pr_result['wire_demo']['status'] == 'ok'
+      and not (wd_base and wd_base.get('status') == 'ok'
+               and wd_base.get('bittide_rev')
+                   == pr_result['wire_demo'].get('bittide_rev'))):
+    split = validate(split, 'wire_demo_baseline')
+    if (split['machine'].get('hostname')
+        == pr_result['machine'].get('hostname')):
+      wd_base = split['wire_demo']
+      wd_note = (f"wireDemo baseline: `{split['clash_commit'][:7]}` "
+                 f'(older result with a matching bittide-hardware '
+                 f'revision).')
+  lines += wire_demo_rows(wd_base, pr_result['wire_demo'])
 
   machine = pr_result['machine']
   footer = [
@@ -158,6 +173,8 @@ def main():
     f"Baseline: {baseline_note}. Machine: `{machine.get('hostname')}` "
     f"({machine.get('cpu')}). GHC {pr_result['ghc_version']}.",
   ]
+  if wd_note:
+    footer.append(wd_note)
   bittide_rev = pr_result['wire_demo'].get('bittide_rev')
   if bittide_rev:
     footer.append(f'bittide-hardware: `{bittide_rev[:7]}`.')
