@@ -166,13 +166,15 @@ jobs:
           # The results branch does not exist on first contact.
           git fetch origin \
             benchmark-results:refs/remotes/origin/benchmark-results || true
+          # Force the fetches: a self-hosted workspace persists between
+          # runs, and the old bench refs do not fast-forward.
           if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
-            git fetch origin "refs/pull/${PR}/head:refs/bench/pr-head"
+            git fetch origin "+refs/pull/${PR}/head:refs/bench/pr-head"
             git rev-parse --verify --quiet "${SHA}^{commit}" \
               || git fetch origin "${SHA}"
           else
-            git fetch origin "refs/pull/${PR}/merge:refs/bench/pr-merge" \
-                             "refs/pull/${PR}/head:refs/bench/pr-head"
+            git fetch origin "+refs/pull/${PR}/merge:refs/bench/pr-merge" \
+                             "+refs/pull/${PR}/head:refs/bench/pr-head"
             # GitHub computes the merge ref lazily. Make sure it merges
             # the sha that announce saw. If not, a newer run covers it.
             [[ "$(git rev-parse refs/bench/pr-merge^2)" == "${SHA}" ]] \
