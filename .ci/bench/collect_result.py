@@ -106,7 +106,9 @@ def main():
               .isoformat(timespec='seconds'),
     'source': source,
     'machine': {
-      'hostname': socket.gethostname(),
+      # In a container job the hostname is an ephemeral container id.
+      # The workflows pass the runner name in BENCH_HOSTNAME instead.
+      'hostname': os.environ.get('BENCH_HOSTNAME') or socket.gethostname(),
       'cpu': cpu_model(),
       'container': os.environ.get('BENCH_CONTAINER'),
     },

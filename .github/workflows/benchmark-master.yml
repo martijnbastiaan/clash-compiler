@@ -44,6 +44,7 @@ jobs:
       contents: write # push_result.sh pushes to the benchmark-results branch
     env:
       BENCH_QUICK: ${{ vars.BENCH_QUICK }}
+      BENCH_HOSTNAME: ${{ runner.name }}
       CABAL_DIR: /bench-cache/cabal
     steps:
       # Get the trusted scripts from the ref of this workflow. Keep them
@@ -79,7 +80,21 @@ jobs:
           mkdir -p "${CABAL_DIR}"
           printf 'repository hackage.haskell.org\n  url: https://hackage.haskell.org/\n  secure: True\n' \
             > "${CABAL_DIR}/config"
+          # Cache format marker. Bump the version to discard a bad
+          # package index (v2: drop the index that came in over http).
+          if [[ ! -f "${CABAL_DIR}/.bench-cache-v2" ]]; then
+            rm -rf "${CABAL_DIR}/packages"
+            touch "${CABAL_DIR}/.bench-cache-v2"
+          fi
           ../scripts/.ci/retry.sh cabal update
+          # The benchmark needs the index-state from cabal.project. Fail
+          # here, with a clear message, when the index does not reach it.
+          required=$(sed -n 's/^index-state: //p' cabal.project)
+          latest=$(cabal update 2>&1 | sed -n 's/^The index-state is set to \(.*\)\.$/\1/p')
+          if [[ "${latest}" < "${required}" ]]; then
+            echo "package index only reaches ${latest}, need ${required}" >&2
+            exit 1
+          fi
           mkdir -p ../out
 
       - name: Run normalization benchmarks
