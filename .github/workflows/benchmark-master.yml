@@ -13,16 +13,14 @@ on:
       sha:
         description: "Commit to benchmark (defaults to the head of the dispatched ref); used for backfills"
         required: false
-      from_sha:
-        description: "Backfill range start; needs to_sha, overrides sha"
-        required: false
-      to_sha:
-        description: "Backfill range end, inclusive"
-        required: false
 
-concurrency:
-  group: bench-master
-  cancel-in-progress: false
+run-name: >-
+  ${{ inputs.sha && format('Benchmark {0}', inputs.sha) || '' }}
+
+# No concurrency group on purpose: a group cancels queued runs, and a
+# cancelled run is a lost datapoint. The benchmark runner has one job
+# slot, so runs serialize in the runner queue instead. Backfills
+# dispatch one run per commit.
 
 permissions: {}
 
@@ -67,7 +65,6 @@ jobs:
           fetch-depth: 0
 
       - name: Check out commit under test
-        if: inputs.from_sha == ''
         working-directory: clash-compiler
         env:
           IN_SHA: ${{ inputs.sha }}
@@ -103,28 +100,15 @@ jobs:
           fi
           mkdir -p ../out
 
-      # Range mode: benchmark each first-parent commit in the range,
-      # oldest first, and push each result at once. Used for backfill
-      # campaigns. See .ci/bench/README.md.
-      - name: Backfill range
-        if: inputs.from_sha != ''
-        env:
-          FROM: ${{ inputs.from_sha }}
-          TO: ${{ inputs.to_sha }}
-        run: ./scripts/.ci/bench/backfill.sh "${FROM}" "${TO}"
-
       - name: Run normalization benchmarks
-        if: inputs.from_sha == ''
         working-directory: clash-compiler
         run: ../scripts/.ci/bench/run_clash_benchmarks.sh ../out/norm.json
 
       - name: Run wireDemo benchmark
-        if: inputs.from_sha == ''
         working-directory: clash-compiler
         run: ../scripts/.ci/bench/run_bittide.sh ../out/wiredemo.json
 
       - name: Collect result
-        if: inputs.from_sha == ''
         working-directory: clash-compiler
         run: ../scripts/.ci/bench/collect_result.py master ../out/norm.json ../out/wiredemo.json ../out/result.json
 
@@ -136,7 +120,10 @@ jobs:
           path: out/
           if-no-files-found: error
 
+      # --replace-skipped: a new result with a good wireDemo leg may
+      # replace a stored result whose wireDemo leg was skipped. This
+      # lets a backfill re-dispatch upgrade results after a new patch
+      # overlay. Results with a good wireDemo leg are never replaced.
       - name: Push result
-        if: inputs.from_sha == ''
         working-directory: clash-compiler
-        run: ../scripts/.ci/bench/push_result.sh ../out/result.json
+        run: ../scripts/.ci/bench/push_result.sh --replace-skipped ../out/result.json

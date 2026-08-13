@@ -108,22 +108,30 @@ Repository configuration:
 - The orphan branch `benchmark-results` must exist and the Actions
   token must be permitted to push to it.
 
-## Backfill campaigns (range mode)
+## Backfill campaigns
 
-Dispatch `benchmark-master.yml` with `from_sha` and `to_sha` to benchmark
-each first-parent commit in a range, oldest first (`backfill.sh`). Each
-result is pushed at once, so a stopped run loses nothing. The loop is
-safe to dispatch again with the same range:
+Dispatch `benchmark-master.yml` once per commit, with the `sha` input:
 
-- A commit with a stored result that has `wire_demo.status == "ok"` is
-  skipped.
-- A commit with a missing result, or one with a skipped wireDemo leg,
-  is benchmarked and its result replaces the old one
-  (`push_result.sh --replace-skipped`).
+    git rev-list --first-parent --reverse <from>^..<to> | while read sha; do
+      gh workflow run benchmark-master.yml -f sha=$sha
+      sleep 2
+    done
 
-Set `BENCH_QUICK=0` first: a quick-mode range run stores quick results.
-Those count as incomplete (their wireDemo leg is skipped), so a full
-run replaces them later.
+Each commit gets its own workflow run. The runs queue at the runner and
+serialize there. The workflow has no concurrency group on purpose: a
+concurrency group cancels queued runs, and a cancelled run is a lost
+datapoint.
+
+Results push with `--replace-skipped`: a result whose wireDemo leg was
+skipped may be replaced by a complete one. To repair skips after a new
+patch overlay, dispatch only the commits that need work:
+
+    git show origin/benchmark-results:results/<sha[:2]>/<sha>.json
+
+Set `BENCH_QUICK=0` first: a quick-mode run stores a quick result. That
+counts as incomplete (its wireDemo leg is skipped), so a full run can
+replace it later. Note that GitHub cancels a job that waits for a
+runner for more than 24 hours; dispatch long campaigns in portions.
 
 ## Patch overlays (`patches.d/`)
 
