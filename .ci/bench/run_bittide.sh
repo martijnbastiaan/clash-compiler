@@ -15,6 +15,14 @@
 # build against the newest clash-compiler. Then the output records the
 # wireDemo leg as skipped and the script exits with code 0.
 #
+# Patch overlays: each directory .ci/bench/patches.d/<name>/ holds a
+# file "applies-before" with one clash-compiler sha B, plus one
+# directory per target repository (bittide-hardware, clash-cores or
+# clash-vexriscv) with an extra git am series. The overlay applies when
+# the checkout under test does not contain B. This repairs builds
+# against clash commits that predate an API change. Keep overlays
+# minimal: wireDemo results are compared across overlays.
+#
 # Environment:
 #   BENCH_QUICK=1   do not build; write a skipped result
 
@@ -65,19 +73,43 @@ checkout_pin() {
   git -C "${ws}/${dir}" rev-parse --verify --quiet "${rev}^{commit}" \
     || git -C "${ws}/${dir}" fetch origin "${rev}"
   git -C "${ws}/${dir}" checkout -f "${rev}"
-  git -C "${ws}/${dir}" clean -dfxq
+  # Keep the build artifacts. Cabal detects stale artifacts itself, and
+  # backfill runs visit many adjacent commits.
+  git -C "${ws}/${dir}" clean -dfxq -e dist-newstyle -e '.ghc.environment.*'
 }
 
 checkout_pin https://github.com/bittide/bittide-hardware.git bittide-hardware "${bittide_rev}"
 checkout_pin https://github.com/clash-lang/clash-cores.git clash-cores "${cores_rev}"
 checkout_pin https://github.com/clash-lang/clash-vexriscv.git clash-vexriscv "${vexriscv_rev}"
 
-git -C "${ws}/bittide-hardware" \
-  -c user.name="clash-benchmark-bot" \
-  -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
-  am "${script_dir}"/patches/*.patch
+apply_patches() {
+  local repo=$1
+  shift
+  git -C "${ws}/${repo}" \
+    -c user.name="clash-benchmark-bot" \
+    -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+    am "$@"
+}
 
-build_log="$(dirname "${out}")/bittide-build.log"
+apply_patches bittide-hardware "${script_dir}"/patches/*.patch
+
+# Apply the overlays whose API-change commit is not in this checkout.
+overlays=""
+for overlay in "${script_dir}"/patches.d/*/; do
+  [[ -d "${overlay}" ]] || continue
+  name=$(basename "${overlay}")
+  before=$(cat "${overlay}/applies-before")
+  if ! git merge-base --is-ancestor "${before}" HEAD; then
+    echo "run_bittide.sh: applying overlay ${name} (checkout predates ${before:0:7})"
+    for repo_dir in "${overlay}"*/; do
+      [[ -d "${repo_dir}" ]] || continue
+      apply_patches "$(basename "${repo_dir}")" "${repo_dir}"*.patch
+    done
+    overlays="${overlays} ${name}"
+  fi
+done
+
+build_log="${out%.json}-build.log"
 echo "run_bittide.sh: building bittide-instances:exe:clash (log: ${build_log})"
 if ! (cd "${ws}/bittide-hardware" \
       && cabal build bittide-instances:exe:clash) &> "${build_log}"; then
@@ -87,7 +119,7 @@ if ! (cd "${ws}/bittide-hardware" \
 fi
 
 hdl_dir=$(mktemp -d)
-run_log="$(dirname "${out}")/bittide-wiredemo.log"
+run_log="${out%.json}-run.log"
 echo "run_bittide.sh: running wireDemoTest (log: ${run_log})"
 if ! (cd "${ws}/bittide-hardware" \
       && cabal run --offline bittide-instances:clash -- \
@@ -105,7 +137,7 @@ rm -rf "${hdl_dir}"
 
 # Parse the three unconditional "Clash: ... took <time>" lines. The time
 # format is [Nd][Nh][Nm]N[.fff]s (see reportTimeDiff in clash-lib).
-if ! python3 - "$out" "$run_log" "$bittide_rev" <<'EOF'
+if ! python3 - "$out" "$run_log" "$bittide_rev" ${overlays} <<'EOF'
 import json
 import re
 import sys
@@ -140,7 +172,8 @@ if missing:
   sys.exit(f'run_bittide.sh: missing timings in log: {sorted(missing)}')
 
 json.dump({'status': 'ok', 'skip_reason': None,
-           'bittide_rev': sys.argv[3], 'runs': [run]},
+           'bittide_rev': sys.argv[3], 'overlays': sys.argv[4:],
+           'runs': [run]},
           open(sys.argv[1], 'w'), indent=2)
 print(f'run_bittide.sh: {run}')
 EOF

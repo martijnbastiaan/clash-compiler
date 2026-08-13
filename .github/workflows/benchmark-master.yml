@@ -13,6 +13,12 @@ on:
       sha:
         description: "Commit to benchmark (defaults to the head of the dispatched ref); used for backfills"
         required: false
+      from_sha:
+        description: "Backfill range start; needs to_sha, overrides sha"
+        required: false
+      to_sha:
+        description: "Backfill range end, inclusive"
+        required: false
 
 concurrency:
   group: bench-master
@@ -61,6 +67,7 @@ jobs:
           fetch-depth: 0
 
       - name: Check out commit under test
+        if: inputs.from_sha == ''
         working-directory: clash-compiler
         env:
           IN_SHA: ${{ inputs.sha }}
@@ -96,15 +103,28 @@ jobs:
           fi
           mkdir -p ../out
 
+      # Range mode: benchmark each first-parent commit in the range,
+      # oldest first, and push each result at once. Used for backfill
+      # campaigns. See .ci/bench/README.md.
+      - name: Backfill range
+        if: inputs.from_sha != ''
+        env:
+          FROM: ${{ inputs.from_sha }}
+          TO: ${{ inputs.to_sha }}
+        run: ./scripts/.ci/bench/backfill.sh "${FROM}" "${TO}"
+
       - name: Run normalization benchmarks
+        if: inputs.from_sha == ''
         working-directory: clash-compiler
         run: ../scripts/.ci/bench/run_clash_benchmarks.sh ../out/norm.json
 
       - name: Run wireDemo benchmark
+        if: inputs.from_sha == ''
         working-directory: clash-compiler
         run: ../scripts/.ci/bench/run_bittide.sh ../out/wiredemo.json
 
       - name: Collect result
+        if: inputs.from_sha == ''
         working-directory: clash-compiler
         run: ../scripts/.ci/bench/collect_result.py master ../out/norm.json ../out/wiredemo.json ../out/result.json
 
@@ -117,5 +137,6 @@ jobs:
           if-no-files-found: error
 
       - name: Push result
+        if: inputs.from_sha == ''
         working-directory: clash-compiler
         run: ../scripts/.ci/bench/push_result.sh ../out/result.json

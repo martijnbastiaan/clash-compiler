@@ -108,6 +108,40 @@ Repository configuration:
 - The orphan branch `benchmark-results` must exist and the Actions
   token must be permitted to push to it.
 
+## Backfill campaigns (range mode)
+
+Dispatch `benchmark-master.yml` with `from_sha` and `to_sha` to benchmark
+each first-parent commit in a range, oldest first (`backfill.sh`). Each
+result is pushed at once, so a stopped run loses nothing. The loop is
+safe to dispatch again with the same range:
+
+- A commit with a stored result that has `wire_demo.status == "ok"` is
+  skipped.
+- A commit with a missing result, or one with a skipped wireDemo leg,
+  is benchmarked and its result replaces the old one
+  (`push_result.sh --replace-skipped`).
+
+Set `BENCH_QUICK=0` first: a quick-mode range run stores quick results.
+Those count as incomplete (their wireDemo leg is skipped), so a full
+run replaces them later.
+
+## Patch overlays (`patches.d/`)
+
+Old clash commits can predate an API change that the pinned
+bittide-hardware needs. Each directory `patches.d/<name>/` repairs one
+such break:
+
+    patches.d/<name>/applies-before   one clash-compiler sha B
+    patches.d/<name>/0001-*.patch     extra git am series for bittide
+
+`run_bittide.sh` applies the overlay when the clash checkout under test
+does not contain B (`git merge-base --is-ancestor`). Applied overlay
+names are recorded in the result (`wire_demo.overlays`).
+
+Keep overlays minimal: shims and bound relaxations only. wireDemo
+numbers are compared across overlays with the same `bittide_rev`, so an
+overlay must not change what Clash compiles.
+
 ## bittide-hardware pin maintenance
 
 The wireDemo leg builds pinned revisions with a patch series, because
