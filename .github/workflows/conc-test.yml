@@ -1,0 +1,27 @@
+name: Concurrency queue test
+
+# Temporary staging test. It answers one question: does a concurrency
+# group with cancel-in-progress false hold more than one pending run?
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Marker for this run"
+        required: true
+
+run-name: "conc-test ${{ inputs.tag }}"
+
+concurrency:
+  group: conc-test
+  cancel-in-progress: false
+
+permissions: {}
+
+jobs:
+  wait:
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          echo "run ${{ inputs.tag }}"
+          sleep 90
