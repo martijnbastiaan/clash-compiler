@@ -1,19 +1,27 @@
 #!/usr/bin/env bash
 # Commit one result.json to the benchmark-results branch.
 #
-# Usage: push_result.sh <result.json>
+# Usage: push_result.sh [--replace-skipped] <result.json>
 #
 # Run this script in a clash-compiler clone that has an authenticated origin
 # remote (for example, an actions/checkout workspace). The script writes the
 # result to results/<sha[0:2]>/<full-sha>.json. If the push is rejected, the
 # script fetches the branch again and retries, with three attempts maximum.
 # An existing identical result is a success. An existing different result is
-# an error.
+# an error. With --replace-skipped, an existing result that has
+# wire_demo.status == "skipped" is replaced instead (backfill runs upgrade
+# earlier incomplete results this way).
 
 set -euo pipefail
 
+replace_skipped=0
+if [[ "${1:-}" == "--replace-skipped" ]]; then
+  replace_skipped=1
+  shift
+fi
+
 if [[ $# -ne 1 ]]; then
-  echo "usage: $0 <result.json>" >&2
+  echo "usage: $0 [--replace-skipped] <result.json>" >&2
   exit 1
 fi
 
@@ -38,8 +46,13 @@ for attempt in 1 2 3; do
       echo "push_result.sh: identical result for ${sha} already present"
       exit 0
     fi
-    echo "push_result.sh: different result for ${sha} already present; refusing to overwrite" >&2
-    exit 1
+    old_status=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["wire_demo"]["status"])' "${wt}/${rel}")
+    if [[ ${replace_skipped} -eq 1 && "${old_status}" == "skipped" ]]; then
+      echo "push_result.sh: replacing result for ${sha} (wire_demo was skipped)"
+    else
+      echo "push_result.sh: different result for ${sha} already present; refusing to overwrite" >&2
+      exit 1
+    fi
   fi
 
   mkdir -p "${wt}/$(dirname "${rel}")"
