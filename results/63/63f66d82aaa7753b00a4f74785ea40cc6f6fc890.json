@@ -1,0 +1,28 @@
+{
+  "clash_commit": "63f66d82aaa7753b00a4f74785ea40cc6f6fc890",
+  "date": "2026-08-13T08:06:39+00:00",
+  "ghc_version": "9.10.3",
+  "machine": {
+    "container": "ghcr.io/clash-lang/nixos-bittide-hardware:2026-05-11",
+    "cpu": "12th Gen Intel(R) Core(TM) i5-1240P",
+    "hostname": "volthe"
+  },
+  "normalization": {
+    "examples/FIR.hs": {
+      "mean_s": 0.01798451949458394,
+      "stddev_s": 0.00023773671299094978
+    }
+  },
+  "parents": [
+    "fb7636c84f0a8c40f8fa45dd47400ac9305f402a",
+    "7b054ee0930d829b672e75780e1e0ecbb5a11c6b"
+  ],
+  "schema_version": 1,
+  "source": "master",
+  "wire_demo": {
+    "bittide_rev": "bea4b627b2daaba2009d52e73b7c709d859094e8",
+    "runs": [],
+    "skip_reason": "BENCH_QUICK is set",
+    "status": "skipped"
+  }
+}
